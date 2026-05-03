@@ -77,12 +77,27 @@ const __THIS_DIR = path.dirname(new URL(import.meta.url).pathname);
 const HTML_PATH = path.join(__THIS_DIR, "stormhaven.html");
 
 // GET /stormhaven — standalone HTML dashboard, served independently of the React SPA
+const JS_PATH = path.join(__THIS_DIR, "stormhaven-dashboard.js");
+
 app.get("/stormhaven", async (c) => {
   try {
     const html = await fs.readFile(HTML_PATH, "utf8");
     return c.html(html);
   } catch (e) {
     return c.text(`stormhaven.html not found at ${HTML_PATH}`, 500);
+  }
+});
+
+// External script — referenced by stormhaven.html. Served separately so the
+// existing global helmet CSP (script-src self) accepts it without inline allowance.
+app.get("/stormhaven-dashboard.js", async (c) => {
+  try {
+    const js = await fs.readFile(JS_PATH, "utf8");
+    c.header("content-type", "application/javascript; charset=utf-8");
+    c.header("cache-control", "no-cache");
+    return c.body(js);
+  } catch (e) {
+    return c.text(`stormhaven-dashboard.js not found at ${JS_PATH}`, 500);
   }
 });
 
@@ -162,8 +177,54 @@ app.get("/api/stormhaven/cost-history", async (c) => {
       })),
     );
   } catch (e: any) {
-    return c.json({ error: e.message || String(e) }, 500);
+    // Graceful empty when DB doesnt exist yet (first nightly rollup is at 23:55 Phoenix)
+    return c.json([]);
   }
 });
+
+
+// GET /api/stormhaven/run/:id — fetch full Hestia health run text for the dot-click modal.
+app.get("/api/stormhaven/run/:id", async (c: any) => {
+  try {
+    const id = c.req.param("id");
+    const HESTIA_HEALTH_ID = "600f541b-09bf-4688-84cb-ea474d4a7ccf";
+    const cronLog = path.join(os.homedir(), ".openclaw", "cron", "runs", `${HESTIA_HEALTH_ID}.jsonl`);
+    let summary: any = null;
+    let sessionId: any = null;
+    try {
+      const lines = (await fs.readFile(cronLog, "utf8")).trim().split("\n");
+      for (let i = lines.length - 1; i >= 0; i--) {
+        try {
+          const r = JSON.parse(lines[i]);
+          if (r.runId === id || r.sessionId === id || String(r.runAtMs) === id) {
+            summary = r.summary;
+            sessionId = r.sessionId;
+            break;
+          }
+        } catch {}
+      }
+    } catch {}
+    if (!sessionId) return c.json({error: "run not found", id}, 404);
+    const sessionFile = path.join(os.homedir(), ".openclaw", "agents", "media-manager", "sessions", `${sessionId}.jsonl`);
+    let text = summary || "(no summary)";
+    try {
+      const sf = await fs.readFile(sessionFile, "utf8");
+      const all = sf.trim().split("\n").map((l: string) => { try { return JSON.parse(l); } catch { return null; } }).filter(Boolean);
+      const parts = all
+        .filter((e: any) => e.type === "text" || e.type === "assistant_message" || e.role === "assistant")
+        .map((e: any) => {
+          if (typeof e.text === "string") return e.text;
+          if (typeof e.content === "string") return e.content;
+          if (Array.isArray(e.content)) return e.content.map((c: any) => c.text || "").join("");
+          return "";
+        }).filter(Boolean);
+      if (parts.length) text = parts.join("\n\n");
+    } catch {}
+    return c.json({sessionId, summary, text});
+  } catch (e: any) {
+    return c.json({error: String(e)}, 500);
+  }
+});
+
 
 export default app;
