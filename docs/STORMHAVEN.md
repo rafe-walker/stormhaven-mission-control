@@ -2,8 +2,8 @@
 
 **Last built:** 2026-05-02
 **Lives in:** `github.com/rafe-walker/stormhaven-mission-control` (fork of `daggerhashimoto/openclaw-nerve`)
-**LAN URL:** `http://192.168.4.41:3080/stormhaven` (from any device on the LAN)
-**Tailscale URL:** `https://stormhaven-mc.tail44fd36.ts.net/stormhaven` *(once `tailscale serve` is wired — see §5)*
+**LAN URL:** `http://192.168.4.41:3080/stormhaven` ✅ **live** — verified HTTP 200 from any LAN device
+**Tailscale URL:** `https://stormhaven-mc.tail44fd36.ts.net/stormhaven` — pending Tailscale install on Mac, see §5
 
 ## What this is
 
@@ -32,21 +32,23 @@ NUC (192.168.4.78)            Mac (192.168.4.41)
                                 └──────────────────────────────────────┘
 ```
 
-## §1 — Install (already done on Joshua's Mac as of 2026-05-02)
+## §1 — Install state (live on Joshua's Mac as of 2026-05-02)
 
-1. The collector skill lives at `~/.openclaw/agents/media-manager/workspace/skills/stormhaven-collector/`. Canonical copy in `github.com/rafe-walker/stormhaven-openclaw` under `workspaces/media-manager/skills/stormhaven-collector/`.
-2. The cron is registered as a Hestia job, `* * * * *` (every minute), agentId=media-manager, no auto-deliver. Confirm via `openclaw cron list | grep stormhaven`.
-3. The Nerve fork is cloned at `/Users/Apple/git/stormhaven-mission-control` and built with `npm run prod`.
-4. Two launchd LaunchAgents:
-   - `~/Library/LaunchAgents/com.stormhaven.mission-control.plist` — runs Nerve at `127.0.0.1:3080`, `RunAtLoad=true`, `KeepAlive=Crashed`.
+1. **Collector skill** — lives at `~/.openclaw/agents/media-manager/workspace/skills/stormhaven-collector/`. Canonical copy in `github.com/rafe-walker/stormhaven-openclaw` under `workspaces/media-manager/skills/stormhaven-collector/`.
+2. **Cron** — registered as a Hestia job, `* * * * *` (every minute), agentId=media-manager, no auto-deliver. Job id `9a2ea33b-ce8d-48cc-b7b9-4c8079a5cca5`. Confirm via `openclaw cron list | grep stormhaven`.
+3. **Nerve fork** — cloned at `/Users/Apple/git/stormhaven-mission-control` and built with `npm run build:server`. Runs from `server-dist/index.js`.
+4. **Two launchd LaunchAgents:**
+   - `~/Library/LaunchAgents/com.stormhaven.mission-control.plist` — runs Nerve at `0.0.0.0:3080`, `NERVE_ALLOW_INSECURE=true`, `NERVE_AUTH=false`, `RunAtLoad=true`, `KeepAlive=Crashed`.
    - `~/Library/LaunchAgents/com.stormhaven.cost-rollup.plist` — runs `cost-rollup.js` daily at 23:55 Phoenix.
 5. Both loaded via `launchctl bootstrap gui/$UID <plist>`.
 
-Verify with:
+**Why HOST=0.0.0.0 + NERVE_ALLOW_INSECURE=true:** Nerve's safety gate refuses 0.0.0.0 binding without auth. For this homelab the NUC and Mac sit behind Starlink CGNAT — there's no public IP and nothing routable from the internet. The Stormhaven dashboard is read-only against `state.json`; even if a LAN device hit it, the worst-case is "they see disk gauges and container status." The full Nerve API (file editor, memory editor, gateway tool invocation) IS exposed on the same port though, so if you ever leave CGNAT or expose this, run `npm run setup` in the Nerve fork to enable password auth and switch HOST back to `127.0.0.1`.
+
+**Verify the live install:**
 ```bash
 launchctl list | grep stormhaven
-curl http://127.0.0.1:3080/stormhaven        # should return HTML
-curl http://127.0.0.1:3080/api/stormhaven/state | jq .schemaVersion  # should be 1
+curl http://192.168.4.41:3080/stormhaven                # HTTP 200 from any LAN device
+curl http://192.168.4.41:3080/api/stormhaven/state | jq .schemaVersion  # → 1
 ```
 
 ## §2 — How the snapshot is shaped
@@ -93,26 +95,32 @@ If you add a new field, update three places:
 
 Bump `schemaVersion` if the change is not backward-compatible.
 
-## §5 — Tailscale Serve setup (manual, ~5 min)
+## §5 — Tailscale Serve setup (one-time manual, ~5 min)
 
-The dashboard binds to `127.0.0.1:3080` on the Mac (Nerve safety check refuses 0.0.0.0 without auth). To reach it from a phone on the tailnet:
+The dashboard is already LAN-reachable at `http://192.168.4.41:3080/stormhaven`. Tailscale Serve adds **off-LAN access** from your phone over the tailnet, with valid HTTPS.
 
 ```bash
-# One-time setup on the Mac:
+# 1. Install Tailscale on the Mac
 brew install --cask tailscale
-open -a Tailscale       # follow GUI to log in to Joshua's tailnet
-sudo tailscale set --hostname stormhaven-mc
+# (Enter sudo password when prompted)
 
-# Map port 443 -> local 3080 over Tailscale Serve:
+# 2. Sign in via the GUI
+open -a Tailscale
+# Click the menu-bar icon → "Sign in" → log in to bryanjoshuae@gmail.com
+
+# 3. Once "Connected" shows green, set hostname + serve:
+sudo tailscale set --hostname stormhaven-mc
 sudo tailscale serve --bg --https=443 http://127.0.0.1:3080
 
-# Verify:
+# 4. Verify:
 tailscale serve status
 # Expected: "https://stormhaven-mc.tail44fd36.ts.net (tailnet only)"
 #           "  └ http://127.0.0.1:3080"
 ```
 
-Then `https://stormhaven-mc.tail44fd36.ts.net/stormhaven` works from any tailnet device.
+Then `https://stormhaven-mc.tail44fd36.ts.net/stormhaven` works from any tailnet device — phone, laptop, anywhere with internet.
+
+**Pre-Tailscale fallback that works today:** `http://192.168.4.41:3080/stormhaven` from any LAN device (phone on the same Wi-Fi, laptop on the LAN, etc.). Off-LAN you can also reach it via the tailnet IP `100.91.125.30:3080/stormhaven` once your phone is on the tailnet, but the tailscale serve path is cleaner.
 
 ## §6 — Merging upstream Nerve updates
 
