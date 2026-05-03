@@ -1,0 +1,234 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>🛡 Stormhaven Mission Control</title>
+<style>
+  :root {
+    --bg: #0a0a0a; --fg: #e4e4e7; --muted: #71717a; --border: #27272a; --card: #18181b;
+    --green: #10b981; --green-bg: rgba(16,185,129,.1); --green-border: rgba(16,185,129,.3);
+    --yellow: #f59e0b; --yellow-bg: rgba(245,158,11,.1); --yellow-border: rgba(245,158,11,.3);
+    --red: #ef4444; --red-bg: rgba(239,68,68,.1); --red-border: rgba(239,68,68,.3);
+  }
+  * { box-sizing: border-box; }
+  body { background: var(--bg); color: var(--fg); font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif; margin: 0; padding: 16px; }
+  h1 { margin: 0 0 16px; font-size: 24px; }
+  .grid { display: grid; gap: 16px; max-width: 1280px; margin: 0 auto; }
+  .grid-3 { grid-template-columns: repeat(3, 1fr); }
+  .grid-2 { grid-template-columns: 1fr 1fr; }
+  @media (max-width: 768px) { .grid-3, .grid-2 { grid-template-columns: 1fr; } }
+  .panel { background: var(--card); border: 1px solid var(--border); border-radius: 12px; padding: 16px; }
+  .panel-title { font-size: 14px; font-weight: 600; margin: 0 0 12px; color: var(--muted); text-transform: uppercase; letter-spacing: .05em; }
+  .status-banner { padding: 16px; border-radius: 12px; border-width: 1px; border-style: solid; }
+  .GREEN { background: var(--green-bg); border-color: var(--green-border); color: var(--green); }
+  .YELLOW { background: var(--yellow-bg); border-color: var(--yellow-border); color: var(--yellow); }
+  .RED { background: var(--red-bg); border-color: var(--red-border); color: var(--red); }
+  .status-word { font-size: 32px; font-weight: 700; }
+  .meta { font-size: 12px; opacity: .7; margin-top: 4px; }
+  .row { display: flex; justify-content: space-between; align-items: baseline; gap: 8px; flex-wrap: wrap; }
+  .disk-card { padding: 12px; border-radius: 8px; border: 1px solid; }
+  .disk-pct { font-size: 28px; font-weight: 700; }
+  .container-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(140px, 1fr)); gap: 6px; font-size: 11px; }
+  .container { padding: 8px; background: rgba(255,255,255,.03); border: 1px solid var(--border); border-radius: 6px; }
+  .container.dangling { border-color: var(--red); }
+  .container .name { font-family: ui-monospace, monospace; font-weight: 600; truncate: ellipsis; overflow: hidden; }
+  .container .state-running { color: var(--green); }
+  .container .state-exited { color: var(--muted); }
+  .container .state-other { color: var(--red); }
+  .pin { color: var(--yellow); }
+  table { width: 100%; font-size: 13px; border-collapse: collapse; }
+  th, td { padding: 4px 8px; text-align: left; }
+  th { color: var(--muted); font-weight: 500; font-size: 11px; text-transform: uppercase; }
+  td.num { text-align: right; font-family: ui-monospace, monospace; }
+  ul.gaps { padding: 0; margin: 0; list-style: none; font-size: 13px; }
+  ul.gaps li { padding: 6px 0; border-bottom: 1px solid var(--border); }
+  ul.gaps li:last-child { border-bottom: none; }
+  .dot { display: inline-block; width: 10px; height: 10px; border-radius: 50%; margin-right: 8px; vertical-align: middle; }
+  .dot.warn { background: var(--yellow); }
+  .dot.red { background: var(--red); }
+  .dot.info { background: var(--muted); }
+  .health-dots { display: flex; flex-wrap: wrap; gap: 3px; }
+  .health-dot { width: 8px; height: 8px; border-radius: 50%; }
+  .health-dot.GREEN { background: var(--green); }
+  .health-dot.YELLOW { background: var(--yellow); }
+  .health-dot.RED { background: var(--red); }
+  pre { white-space: pre-wrap; font-family: ui-monospace, monospace; font-size: 12px; color: var(--muted); margin: 0; }
+  #status-bar { position: fixed; top: 8px; right: 16px; font-size: 11px; opacity: .6; }
+  .stale { color: var(--red) !important; opacity: 1; }
+  a, a:visited { color: var(--green); }
+</style>
+</head>
+<body>
+<div id="status-bar">connecting...</div>
+<div class="grid">
+  <h1>🛡 Stormhaven Mission Control</h1>
+  <div id="header"></div>
+  <div id="setup-gaps"></div>
+  <div class="grid grid-3" id="disks"></div>
+  <div class="grid grid-2">
+    <div class="panel" id="arr"></div>
+    <div class="panel" id="recent-runs"></div>
+  </div>
+  <div class="panel" id="containers"></div>
+  <div class="panel" id="quick-facts"></div>
+</div>
+
+<script>
+const $ = id => document.getElementById(id);
+let lastSnap = null;
+
+function ageSeconds(iso) { return Math.floor((Date.now() - new Date(iso).getTime()) / 1000); }
+
+function render(snap, status, stale) {
+  lastSnap = snap;
+  $('status-bar').textContent = `${status} • last collector ${ageSeconds(snap.generatedAt)}s ago`;
+  $('status-bar').className = stale ? 'stale' : '';
+
+  // Header banner
+  $('header').innerHTML = `
+    <div class="status-banner ${snap.stack.overall}">
+      <div class="row">
+        <div>
+          <span class="status-word">${snap.stack.overall}</span>
+          <span style="margin-left:12px;font-size:14px;opacity:.8">${snap.stack.overallReason}</span>
+          <div class="meta">Last collector ${ageSeconds(snap.generatedAt)}s ago • ${snap.collector.sourcesOk}/${snap.collector.sourcesOk + snap.collector.sourcesFailed} OK • ${(snap.collector.elapsedMs/1000).toFixed(1)}s ${stale ? '<span style="color:var(--red);margin-left:8px">⚠ STALE</span>' : ''}</div>
+        </div>
+        <div style="text-align:right">
+          <div>💰 today $${snap.openclaw.today.estimatedCostUSD.toFixed(2)}</div>
+          <div class="meta">MTD $${snap.openclaw.mtd.estimatedCostUSD.toFixed(2)}</div>
+        </div>
+      </div>
+    </div>
+  `;
+
+  // Disk gauges
+  $('disks').innerHTML = snap.disks.map(d => {
+    const cls = d.usedPct > 95 ? 'RED' : d.usedPct > 80 ? 'YELLOW' : 'GREEN';
+    const trend = d.trend.samplesAvailable < 60
+      ? 'trend pending'
+      : d.trend.projectedDaysToCritical95 == null
+        ? `Δ${d.trend.deltaUsedGB24h}GB/24h`
+        : `Δ${d.trend.deltaUsedGB24h}GB/24h • ${d.trend.projectedDaysToCritical95}d to 95%`;
+    return `<div class="disk-card ${cls}">
+      <div class="row"><span style="font-family:ui-monospace,monospace;font-size:13px">${d.mount}</span><span class="disk-pct">${d.usedPct}%</span></div>
+      <div class="meta">${d.purpose}</div>
+      <div style="font-size:12px;margin-top:8px">${d.usedGB} / ${d.totalGB} GB (${d.freeGB} free)</div>
+      <div class="meta" style="margin-top:4px">${trend}</div>
+    </div>`;
+  }).join('');
+
+  // Container grid
+  const dangling = snap.dependencies.gluetunQbtNetns.dangling;
+  const danglingAlert = snap.dependencies.gluetunQbtNetns.alert;
+  $('containers').innerHTML = `
+    <h2 class="panel-title">Containers (${snap.containers.length})</h2>
+    <div class="container-grid">${snap.containers.map(c => {
+      const isQbt = c.name === 'qbittorrent';
+      const stateCls = c.state === 'running' ? 'state-running' : c.state === 'exited' ? 'state-exited' : 'state-other';
+      const danglingCls = isQbt && dangling ? 'dangling' : '';
+      const tooltip = isQbt && danglingAlert ? ` title="${danglingAlert}"` : '';
+      return `<div class="container ${danglingCls}"${tooltip}>
+        <div class="row"><span class="name">${c.name}</span>${c.pinned ? `<span class="pin" title="${c.pinReason||''}">📌</span>` : ''}</div>
+        <div class="${stateCls}">${c.state}</div>
+        ${isQbt && dangling ? '<div style="color:var(--red);font-size:10px;margin-top:4px">Dangling NetNS</div>' : ''}
+      </div>`;
+    }).join('')}</div>
+    <div class="meta" style="margin-top:8px">Gluetun↔qBT NetNS: <span style="color:${dangling ? 'var(--red)' : 'var(--green)'}">${dangling ? 'DANGLING — force-recreate qbt' : 'OK'}</span></div>
+  `;
+
+  // ARR + Jellyfin block
+  const arrRows = [
+    { name: 'Radarr', i: snap.arr.radarr },
+    { name: 'Sonarr', i: snap.arr.sonarr },
+    { name: 'Lidarr', i: snap.arr.lidarr },
+  ].map(s => `<tr>
+    <td>${s.name}</td>
+    <td class="num">${s.i.queueCount}</td>
+    <td class="num">${s.i.missingCount}</td>
+    <td class="num">${s.i.wantedCount}</td>
+    <td class="num" style="color:${s.i.indexerCount>0?'var(--green)':'var(--yellow)'}">${s.i.indexerCount}</td>
+  </tr>`).join('');
+  $('arr').innerHTML = `
+    <h2 class="panel-title">*ARR + Media</h2>
+    <table>
+      <thead><tr><th>Service</th><th style="text-align:right">Q</th><th style="text-align:right">Missing</th><th style="text-align:right">Wanted</th><th style="text-align:right">Indexers</th></tr></thead>
+      <tbody>${arrRows}</tbody>
+    </table>
+    <div class="meta" style="margin-top:8px">qBT: ${snap.qbittorrent.active} active • ${snap.qbittorrent.seeding} seeding • ↓${snap.qbittorrent.downKBs}KB/s ↑${snap.qbittorrent.upKBs}KB/s</div>
+    <div class="meta">Jellyseerr: ${snap.jellyseerr.totalRequests} total • ${snap.jellyseerr.pending} pending</div>
+    <div class="meta">Jellyfin: v${snap.jellyfin.version} • ${snap.jellyfin.activeStreams} streams • ${snap.jellyfin.transcodeCount} transcoding ${snap.jellyfin.transcodeWarning ? '<span style="color:var(--yellow)" title="'+snap.jellyfin.transcodeWarning+'">⚠</span>' : ''}</div>
+  `;
+
+  // Recent runs
+  const dots = snap.openclaw.hestiaHealthRuns24h.slice(-96).map(r =>
+    `<span class="health-dot ${r.outcome}" title="${r.at} • ${r.outcome} • ${r.durationMs}ms"></span>`
+  ).join('');
+  const briefs = snap.openclaw.morningBriefs7d.map(b =>
+    `<li><span class="meta">${(b.at||'').slice(0,10)}</span> · $${b.estimatedCostUSD.toFixed(2)} · ${(b.summarySnippet||'').slice(0,80)}…</li>`
+  ).join('');
+  $('recent-runs').innerHTML = `
+    <h2 class="panel-title">Hestia health (last 24h)</h2>
+    <div class="health-dots">${dots || '<span class="meta">no runs yet</span>'}</div>
+    <h2 class="panel-title" style="margin-top:16px">Morning briefs (last 7d)</h2>
+    <ul class="gaps">${briefs || '<li class="meta">no briefs yet</li>'}</ul>
+  `;
+
+  // Setup gaps
+  $('setup-gaps').innerHTML = snap.setupGaps.length === 0 ? '' : `
+    <div class="panel">
+      <h2 class="panel-title">Setup gaps (${snap.setupGaps.length})</h2>
+      <ul class="gaps">${snap.setupGaps.map(g =>
+        `<li><span class="dot ${g.severity}"></span><strong>${g.service}</strong>: ${g.msg}</li>`
+      ).join('')}</ul>
+    </div>
+  `;
+
+  // Quick facts
+  $('quick-facts').innerHTML = `
+    <h2 class="panel-title">Quick facts</h2>
+    <pre>${snap.stack.lastHealthRunSummary || '(no recent summary)'}</pre>
+    <div class="grid grid-2" style="margin-top:12px;font-size:12px;color:var(--muted)">
+      <div>VPN: ${snap.vpn.country} (${snap.vpn.ip})</div>
+      <div>Tailscale: peers=${snap.tailscale.peerCount}</div>
+      <div>AdGuard: ${snap.adguard.queries24h} q/24h, ${snap.adguard.blockedPct}% blocked</div>
+      <div>Host: load ${snap.host.load.join('/')} on ${snap.host.kernel}</div>
+    </div>
+  `;
+}
+
+// SSE connection with reconnect
+let attempt = 0;
+function connect() {
+  const es = new EventSource('/api/stormhaven/stream');
+  es.addEventListener('state', ev => {
+    try {
+      const snap = JSON.parse(ev.data);
+      render(snap, 'connected', false);
+      attempt = 0;
+    } catch (e) { console.error(e); }
+  });
+  es.addEventListener('stale', ev => {
+    if (lastSnap) render(lastSnap, 'stale', true);
+  });
+  es.addEventListener('heartbeat', () => {});
+  es.onerror = () => {
+    es.close();
+    attempt += 1;
+    const delay = Math.min(30000, 1000 * Math.pow(2, attempt - 1));
+    $('status-bar').textContent = `disconnected — retrying in ${delay/1000}s`;
+    setTimeout(() => fetch('/api/stormhaven/state').then(r => r.json()).then(snap => render(snap, 'reconnected', false)).catch(()=>{}).finally(connect), delay);
+  };
+}
+
+// Initial fetch + then SSE
+fetch('/api/stormhaven/state')
+  .then(r => r.ok ? r.json() : Promise.reject(r.status))
+  .then(snap => render(snap, 'connected', false))
+  .catch(err => {
+    document.body.innerHTML = `<h1>🛡 Stormhaven Mission Control</h1><p style="color:var(--red)">Failed to load: ${err}</p><p>Check that <code>~/.openclaw/stormhaven/state.json</code> exists.</p>`;
+  })
+  .finally(connect);
+</script>
+</body>
+</html>
