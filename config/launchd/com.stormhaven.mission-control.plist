@@ -1,0 +1,35 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>Label</key>
+  <string>com.stormhaven.mission-control</string>
+  <key>ProgramArguments</key>
+  <array>
+    <string>/opt/homebrew/bin/node</string>
+    <string>/Users/Apple/git/stormhaven-mission-control/server-dist/index.js</string>
+  </array>
+  <key>EnvironmentVariables</key>
+  <dict>
+    <key>NODE_ENV</key><string>production</string>
+    <key>HOST</key><string>127.0.0.1</string>
+    <key>PORT</key><string>3080</string>
+    <key>OPENCLAW_GATEWAY_URL</key><string>ws://127.0.0.1:18789</string>
+    <key>STORMHAVEN_STATE_PATH</key><string>/Users/Apple/.openclaw/stormhaven/state.json</string>
+    <key>STORMHAVEN_HISTORY_DB</key><string>/Users/Apple/.openclaw/stormhaven/history.db</string>
+    <key>NERVE_AUTH</key><string>false</string>
+  </dict>
+  <key>RunAtLoad</key><true/>
+  <key>KeepAlive</key>
+  <dict>
+    <key>Crashed</key><true/>
+    <key>SuccessfulExit</key><false/>
+  </dict>
+  <key>StandardOutPath</key>
+  <string>/Users/Apple/.openclaw/stormhaven/nerve.log</string>
+  <key>StandardErrorPath</key>
+  <string>/Users/Apple/.openclaw/stormhaven/nerve.err</string>
+  <key>WorkingDirectory</key>
+  <string>/Users/Apple/git/stormhaven-mission-control</string>
+</dict>
+</plist>

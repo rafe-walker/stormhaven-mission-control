@@ -1,0 +1,28 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>Label</key>
+  <string>com.stormhaven.cost-rollup</string>
+  <key>ProgramArguments</key>
+  <array>
+    <string>/opt/homebrew/bin/node</string>
+    <string>/Users/Apple/git/stormhaven-mission-control/server-dist/scripts/cost-rollup.js</string>
+  </array>
+  <key>StartCalendarInterval</key>
+  <dict>
+    <key>Hour</key><integer>23</integer>
+    <key>Minute</key><integer>55</integer>
+  </dict>
+  <key>EnvironmentVariables</key>
+  <dict>
+    <key>TZ</key><string>America/Phoenix</string>
+    <key>STORMHAVEN_STATE_PATH</key><string>/Users/Apple/.openclaw/stormhaven/state.json</string>
+    <key>STORMHAVEN_HISTORY_DB</key><string>/Users/Apple/.openclaw/stormhaven/history.db</string>
+  </dict>
+  <key>StandardOutPath</key>
+  <string>/Users/Apple/.openclaw/stormhaven/cost-rollup.log</string>
+  <key>StandardErrorPath</key>
+  <string>/Users/Apple/.openclaw/stormhaven/cost-rollup.log</string>
+</dict>
+</plist>
